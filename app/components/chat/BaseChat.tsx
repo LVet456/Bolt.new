@@ -1,19 +1,19 @@
+// app/components/chat/BaseChat.tsx
 // @ts-nocheck
 // Preventing TS checks with files presented in the video for a better presentation.
 import type { Message } from 'ai';
-import React, { type RefCallback, useEffect } from 'react';
+import React, { type RefCallback, useEffect, useState, useRef } from 'react';
 import { ClientOnly } from 'remix-utils/client-only';
 import { Menu } from '~/components/sidebar/Menu.client';
 import { IconButton } from '~/components/ui/IconButton';
 import { Workbench } from '~/components/workbench/Workbench.client';
 import { classNames } from '~/utils/classNames';
-import { MODEL_LIST, DEFAULT_PROVIDER } from '~/utils/constants';
+import { DEFAULT_PROVIDER, DEFAULT_MODEL } from '~/utils/constants';
 import { Messages } from './Messages.client';
 import { SendButton } from './SendButton.client';
-import { useState } from 'react';
 import { APIKeyManager } from './APIKeyManager';
 import Cookies from 'js-cookie';
-
+import { ModelDropdown } from '~/components/ui/ModelDropdown';
 import styles from './BaseChat.module.scss';
 
 const EXAMPLE_PROMPTS = [
@@ -23,47 +23,6 @@ const EXAMPLE_PROMPTS = [
   { text: 'Make a space invaders game' },
   { text: 'How do I center a div?' },
 ];
-
-const providerList = [...new Set(MODEL_LIST.map((model) => model.provider))]
-
-const ModelSelector = ({ model, setModel, provider, setProvider, modelList, providerList }) => {
-  return (
-    <div className="mb-2 flex gap-2">
-      <select 
-        value={provider}
-        onChange={(e) => {
-          setProvider(e.target.value);
-          const firstModel = [...modelList].find(m => m.provider == e.target.value);
-          setModel(firstModel ? firstModel.name : '');
-        }}
-        className="flex-1 p-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary focus:outline-none focus:ring-2 focus:ring-bolt-elements-focus transition-all"
-      >
-        {providerList.map((provider) => (
-          <option key={provider} value={provider}>
-            {provider}
-          </option>
-        ))}
-        <option key="Ollama" value="Ollama">
-          Ollama
-        </option>
-        <option key="OpenAILike" value="OpenAILike">
-          OpenAILike
-        </option>
-      </select>
-      <select
-        value={model}
-        onChange={(e) => setModel(e.target.value)}
-        className="flex-1 p-2 rounded-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background text-bolt-elements-textPrimary focus:outline-none focus:ring-2 focus:ring-bolt-elements-focus transition-all"
-      >
-        {[...modelList].filter(e => e.provider == provider && e.name).map((modelOption) => (
-          <option key={modelOption.name} value={modelOption.name}>
-            {modelOption.label}
-          </option>
-        ))}
-      </select>
-    </div>
-  );
-};
 
 const TEXTAREA_MIN_HEIGHT = 76;
 
@@ -77,14 +36,9 @@ interface BaseChatProps {
   messages?: Message[];
   enhancingPrompt?: boolean;
   promptEnhanced?: boolean;
-  input?: string;
-  model: string;
-  setModel: (model: string) => void;
-  provider: string;
-  setProvider: (provider: string) => void;
   handleStop?: () => void;
   sendMessage?: (event: React.UIEvent, messageInput?: string) => void;
-  handleInputChange?: (event: React.ChangeEvent<HTMLTextAreaElement>) => void;
+
   enhancePrompt?: () => void;
 }
 
@@ -100,13 +54,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       enhancingPrompt = false,
       promptEnhanced = false,
       messages,
-      input = '',
-      model,
-      setModel,
-      provider,
-      setProvider,
       sendMessage,
-      handleInputChange,
       enhancePrompt,
       handleStop,
     },
@@ -114,21 +62,18 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
   ) => {
     const TEXTAREA_MAX_HEIGHT = chatStarted ? 400 : 200;
     const [apiKeys, setApiKeys] = useState<Record<string, string>>({});
+    const [model, setModel] = useState(DEFAULT_MODEL);
+    const [provider, setProvider] = useState(DEFAULT_PROVIDER);
+    const [input, setInput] = useState('');
 
     useEffect(() => {
-      // Load API keys from cookies on component mount
       try {
         const storedApiKeys = Cookies.get('apiKeys');
         if (storedApiKeys) {
-          const parsedKeys = JSON.parse(storedApiKeys);
-          if (typeof parsedKeys === 'object' && parsedKeys !== null) {
-            setApiKeys(parsedKeys);
-          }
+          setApiKeys(JSON.parse(storedApiKeys));
         }
       } catch (error) {
         console.error('Error loading API keys from cookies:', error);
-        // Clear invalid cookie data
-        Cookies.remove('apiKeys');
       }
     }, []);
 
@@ -136,13 +81,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
       try {
         const updatedApiKeys = { ...apiKeys, [provider]: key };
         setApiKeys(updatedApiKeys);
-        // Save updated API keys to cookies with 30 day expiry and secure settings
-        Cookies.set('apiKeys', JSON.stringify(updatedApiKeys), {
-          expires: 30, // 30 days
-          secure: true, // Only send over HTTPS
-          sameSite: 'strict', // Protect against CSRF
-          path: '/' // Accessible across the site
-        });
+        Cookies.set('apiKeys', JSON.stringify(updatedApiKeys));
       } catch (error) {
         console.error('Error saving API keys to cookies:', error);
       }
@@ -192,19 +131,15 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                   'sticky bottom-0': chatStarted,
                 })}
               >
-                <ModelSelector
-                  model={model}
-                  setModel={setModel}
-                  modelList={MODEL_LIST}
-                  provider={provider}
-                  setProvider={setProvider}
-                  providerList={providerList}
-                />
-                <APIKeyManager
-                  provider={provider}
-                  apiKey={apiKeys[provider] || ''}
-                  setApiKey={(key) => updateApiKey(provider, key)}
-                />
+                <div className="flex items-center mb-2">
+                  <APIKeyManager
+                    provider={provider}
+                    apiKey={apiKeys[provider] || ''}
+                    setApiKey={(key) => updateApiKey(provider, key)}
+                  />
+                  <ModelDropdown model={model} setModel={setModel} provider={provider} setProvider={setProvider} />
+                </div>
+
                 <div
                   className={classNames(
                     'shadow-lg border border-bolt-elements-borderColor bg-bolt-elements-prompt-background backdrop-filter backdrop-blur-[8px] rounded-lg overflow-hidden transition-all',
@@ -221,12 +156,12 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
 
                         event.preventDefault();
 
-                        sendMessage?.(event);
+                        sendMessage?.(event, input);
                       }
                     }}
                     value={input}
                     onChange={(event) => {
-                      handleInputChange?.(event);
+                      setInput(event.target.value);
                     }}
                     style={{
                       minHeight: TEXTAREA_MIN_HEIGHT,
@@ -246,7 +181,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                             return;
                           }
 
-                          sendMessage?.(event);
+                          sendMessage?.(event, input);
                         }}
                       />
                     )}
@@ -278,7 +213,9 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                     </div>
                     {input.length > 3 ? (
                       <div className="text-xs text-bolt-elements-textTertiary">
-                        Use <kbd className="kdb px-1.5 py-0.5 rounded bg-bolt-elements-background-depth-2">Shift</kbd> + <kbd className="kdb px-1.5 py-0.5 rounded bg-bolt-elements-background-depth-2">Return</kbd> for a new line
+                        Use <kbd className="kdb px-1.5 py-0.5 rounded bg-bolt-elements-background-depth-2">Shift</kbd> +{' '}
+                        <kbd className="kdb px-1.5 py-0.5 rounded bg-bolt-elements-background-depth-2">Return</kbd> for
+                        a new line
                       </div>
                     ) : null}
                   </div>
@@ -295,6 +232,7 @@ export const BaseChat = React.forwardRef<HTMLDivElement, BaseChatProps>(
                         key={index}
                         onClick={(event) => {
                           sendMessage?.(event, examplePrompt.text);
+                          setInput(examplePrompt.text);
                         }}
                         className="group flex items-center w-full gap-2 justify-center bg-transparent text-bolt-elements-textTertiary hover:text-bolt-elements-textPrimary transition-theme"
                       >
